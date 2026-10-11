@@ -17,6 +17,9 @@ ArchiveOrgKeys.txt
 *.keys
 *secret*.txt
 *secret*.json
+# Local agent tooling (skills etc.) — never commit
+.agents/
+skills-lock.json
 # Tests stay local — never commit
 tests/
 # PyInstaller artifacts

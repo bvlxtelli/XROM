@@ -584,6 +584,16 @@ class App:
         self.glist.pack(fill="both", expand=True, padx=6, pady=6)
         self.refresh_library()
 
+    @staticmethod
+    def _on_disk(folder: str) -> bool:
+        """A library entry counts as downloaded if its folder holds any
+        real file besides the .xrom.json sidecar."""
+        try:
+            return any(p.is_file() and p.name != ".xrom.json"
+                       for p in Path(folder).rglob("*"))
+        except OSError:
+            return False
+
     def refresh_library(self) -> None:
         if not hasattr(self, "glist"):
             return
@@ -593,10 +603,13 @@ class App:
         if not games:
             self.ctk.CTkLabel(
                 self.glist,
-                text="Library empty — search a game and + Library it.").pack(
-                    padx=8, pady=20)
+                text="Library empty — search a game and + Library it. "
+                     "Entries can wait here until you download them.").pack(
+                         padx=8, pady=20)
             return
         for g in games:
+            game = Library.game_from_row(g)
+            on_disk = self._on_disk(g["folder"] or "")
             row = self.ctk.CTkFrame(self.glist)
             row.pack(fill="x", padx=4, pady=3)
             icon = self.ctk.CTkLabel(row, text="🎮",
@@ -610,12 +623,27 @@ class App:
             self.ctk.CTkLabel(
                 txt, text=f"{g['title']} [{g['platform']}] {g['year'] or ''}",
                 font=("Segoe UI", 13, "bold"), anchor="w").pack(fill="x")
-            self.ctk.CTkLabel(txt, text=g["folder"] or "",
-                              anchor="w").pack(fill="x")
+            state = ("On disk" if on_disk
+                     else "Not downloaded"
+                          + (f" — {len(game.links)} link(s) ready"
+                             if game.links else " — no links yet"))
+            self.ctk.CTkLabel(txt, text=state, anchor="w").pack(fill="x")
             self.ctk.CTkButton(
                 row, text="🗑", width=36,
                 command=lambda t=g["title"], p=g["platform"]: self.delete_game(t, p)
-            ).pack(side="right", padx=4)
+            ).pack(side="right", padx=2)
+            send = self.ctk.CTkButton(
+                row, text="⬆", width=36,
+                command=lambda f=g["folder"], t=g["title"]: self.ftp_send_game(f, t))
+            if not on_disk:
+                send.configure(state="disabled")
+            send.pack(side="right", padx=2)
+            dl = self.ctk.CTkButton(
+                row, text="⬇", width=36,
+                command=lambda gm=game: self.do_download(gm))
+            if on_disk or not game.links:
+                dl.configure(state="disabled")
+            dl.pack(side="right", padx=2)
 
     def delete_game(self, title: str, platform: str) -> None:
         """Removes the library ENTRY (files on disk are kept)."""
@@ -628,8 +656,10 @@ class App:
         if not games or not games[0]["folder"]:
             self._set_status("Library empty — nothing to send.")
             return
-        folder = Path(games[0]["folder"])
-        title = games[0]["title"]
+        self.ftp_send_game(games[0]["folder"], games[0]["title"])
+
+    def ftp_send_game(self, folder: str, title: str) -> None:
+        folder = Path(folder)
         f = self.cfg.ftp
         host, port, user, password = f.host, f.port, f.user, f.password
 

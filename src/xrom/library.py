@@ -6,13 +6,13 @@ import sqlite3
 import time
 from pathlib import Path
 
-from .models import Game, QueueItem
+from .models import Downloadable, Game, QueueItem
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS games(
   title TEXT, platform TEXT, year INTEGER, genres TEXT, summary TEXT,
   cover_path TEXT, companies TEXT, ids TEXT, title_id TEXT, folder TEXT,
-  updated REAL,
+  updated REAL, links TEXT,
   UNIQUE(title, platform));
 CREATE TABLE IF NOT EXISTS queue(
   id INTEGER PRIMARY KEY AUTOINCREMENT, game_title TEXT, url TEXT UNIQUE,
@@ -27,19 +27,63 @@ class Library:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._con = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._con.executescript(_SCHEMA)
+        # Migrate older DBs (first releases lacked the links column).
+        try:
+            self._con.execute("ALTER TABLE games ADD COLUMN links TEXT")
+        except sqlite3.OperationalError:
+            pass
 
     # -- games ----------------------------------------------------------
+    @staticmethod
+    def _links_json(game: Game) -> str:
+        return json.dumps([{"title": d.title, "uris": d.uris,
+                            "file_size": d.file_size,
+                            "upload_date": d.upload_date,
+                            "source": d.source, "extra": d.extra}
+                           for d in game.links])
+
+    @staticmethod
+    def game_from_row(row: dict) -> Game:
+        """Rehydrate a Game (with links) from a list_games() row.
+
+        Lets library entries download LATER: links survive restarts.
+        """
+        links = []
+        try:
+            raw = json.loads(row.get("links") or "[]")
+        except ValueError:
+            raw = []
+        for d in raw:
+            try:
+                links.append(Downloadable(
+                    title=d.get("title", ""), uris=d.get("uris") or [],
+                    file_size=d.get("file_size"),
+                    upload_date=d.get("upload_date", ""),
+                    source=d.get("source", ""), extra=d.get("extra") or {}))
+            except (TypeError, AttributeError):
+                continue
+        return Game(
+            title=row.get("title", ""), platform=row.get("platform", ""),
+            year=row.get("year"),
+            genres=_loads_list(row.get("genres")),
+            summary=row.get("summary") or "",
+            cover_url="", companies=_loads_list(row.get("companies")),
+            ids=_loads_dict(row.get("ids")),
+            title_id=row.get("title_id") or "", links=links)
+
     def upsert_game(self, game: Game, folder: str = "", cover_path: str = "") -> None:
         self._con.execute(
-            "INSERT INTO games VALUES(?,?,?,?,?,?,?,?,?,?,?) "
+            "INSERT INTO games VALUES(?,?,?,?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(title, platform) DO UPDATE SET year=excluded.year,"
             " genres=excluded.genres, summary=excluded.summary,"
             " cover_path=excluded.cover_path, companies=excluded.companies,"
             " ids=excluded.ids, title_id=excluded.title_id,"
-            " folder=excluded.folder, updated=excluded.updated",
+            " folder=excluded.folder, updated=excluded.updated,"
+            " links=excluded.links",
             (game.title, game.platform, game.year, json.dumps(game.genres),
              game.summary, cover_path, json.dumps(game.companies),
-             json.dumps(game.ids), game.title_id, folder, time.time()))
+             json.dumps(game.ids), game.title_id, folder, time.time(),
+             self._links_json(game)))
         self._con.commit()
 
     def list_games(self) -> list[dict]:
@@ -92,3 +136,19 @@ class Library:
         self._con.execute("DELETE FROM games WHERE title=? AND platform=?",
                           (title, platform))
         self._con.commit()
+
+
+def _loads_list(raw) -> list:
+    try:
+        data = json.loads(raw or "[]")
+        return data if isinstance(data, list) else []
+    except ValueError:
+        return []
+
+
+def _loads_dict(raw) -> dict:
+    try:
+        data = json.loads(raw or "{}")
+        return data if isinstance(data, dict) else {}
+    except ValueError:
+        return {}
