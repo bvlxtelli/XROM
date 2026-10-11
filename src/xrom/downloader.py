@@ -21,10 +21,14 @@ CHUNK = 4 * 1024 * 1024
 
 class DownloadManager:
     def __init__(self, library: Library, max_retries: int = 3,
-                 on_change: Callable[[], None] | None = None) -> None:
+                 on_change: Callable[[], None] | None = None,
+                 auth_headers: dict | None = None,
+                 cookies: dict | None = None) -> None:
         self.library = library
         self.max_retries = max_retries
         self.on_change = on_change
+        self.auth_headers = dict(auth_headers or {})
+        self.cookies = dict(cookies or {})
         self._lock = threading.Lock()
         self._cancel: set[int] = set()
         self._pause: set[int] = set()
@@ -66,7 +70,27 @@ class DownloadManager:
         self._notify()
         self.start()
 
-    # -- worker ---------------------------------------------------------
+    # -- auth ---------------------------------------------------------
+    def sync_auth(self, session) -> None:
+        """Copy auth (S3 header + cookies) from a metadata session.
+
+        X-Store uses the same IA headers for metadata AND downloads
+        (constructIAHeaders); requests Sessions just don't share them.
+        Cookies are copied as full morsels: get_dict() would drop the
+        cookie domain (.archive.org) and dn*. hosts would 401.
+        """
+        from requests.cookies import RequestsCookieJar
+
+        if "Authorization" in session.headers:
+            self.auth_headers["Authorization"] = session.headers["Authorization"]
+        jar: RequestsCookieJar = RequestsCookieJar()
+        try:
+            for c in session.cookies:
+                jar.set_cookie(c)
+        except Exception:
+            pass
+        self.cookies = jar
+
     def _notify(self) -> None:
         if self.on_change:
             try:
@@ -74,6 +98,7 @@ class DownloadManager:
             except Exception:
                 pass
 
+    # -- worker ---------------------------------------------------------
     def _loop(self) -> None:
         while True:
             pending = [q for q in self.library.list_queue(active_only=True)
@@ -122,9 +147,12 @@ class DownloadManager:
         dest.parent.mkdir(parents=True, exist_ok=True)
         done = dest.stat().st_size if dest.exists() else 0
         headers = {"Accept-Encoding": "identity"}
+        headers.update(self.auth_headers)
         if done:
             headers["Range"] = f"bytes={done}-"
         s = new_session()
+        if self.cookies:
+            s.cookies.update(self.cookies)
         with s.get(url, stream=True, headers=headers, timeout=60) as r:
             if r.status_code == 416:  # already complete
                 cb(done, done, "done")

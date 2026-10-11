@@ -601,6 +601,7 @@ class App:
         self.entries["ia_s3_secret"].delete(0, "end")
         ia_auth.apply_s3(self.session, access, secret)
         self._session_secret = secret
+        self.dm.sync_auth(self.session)
         self.cfg_status.configure(text="Keys imported (local session only).")
 
     def save_config(self) -> None:
@@ -628,6 +629,7 @@ class App:
         c.save()
         if c.ia_s3_access and c.ia_s3_secret:
             ia_auth.apply_s3(self.session, c.ia_s3_access, c.ia_s3_secret)
+        self.dm.sync_auth(self.session)
         self.cfg_status.configure(text="Saved.")
 
     def test_ia(self) -> None:
@@ -644,6 +646,7 @@ class App:
                     msg = "Login OK." if ok else "Login failed."
                     if ok:
                         self.session = s
+                        self.dm.sync_auth(self.session)
                 else:
                     ok, msg = False, "Fill email+password or S3 keys."
             except Exception as ex:

@@ -22,7 +22,7 @@ class FtpPreset:
     port: int = 21
     user: str = "xbox"
     password: str = "xbox"
-    remote_dir: str = "Hdd1:\\Games"
+    remote_dir: str = "Hdd1/Games"
     passive: bool = False
 
 

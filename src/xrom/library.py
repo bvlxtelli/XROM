@@ -49,9 +49,16 @@ class Library:
 
     # -- queue ----------------------------------------------------------
     def enqueue(self, item: QueueItem) -> int:
+        """Insert, or re-queue an existing URL (reset status/attempts).
+
+        Re-adding a failed/done URL must retry it — silently returning a
+        stale 'error' row would make the manager look broken.
+        """
         self._con.execute(
-            "INSERT OR IGNORE INTO queue(game_title,url,dest,status,attempts,"
-            "bytes_done,total,error) VALUES(?,?,?,?,?,?,?,?)",
+            "INSERT INTO queue(game_title,url,dest,status,attempts,"
+            "bytes_done,total,error) VALUES(?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(url) DO UPDATE SET game_title=excluded.game_title,"
+            " dest=excluded.dest, status='queued', attempts=0, error=''",
             (item.game_title, item.url, item.dest, item.status, item.attempts,
              item.bytes_done, item.total, item.error))
         self._con.commit()
