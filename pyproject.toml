@@ -1,0 +1,43 @@
+[project]
+name = "xrom"
+version = "0.1.0"
+description = "Xbox ROM download manager and organizer for PC (Python + CustomTkinter)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "AGPL-3.0-or-later" }
+dependencies = [
+  "requests>=2.31",
+  "customtkinter>=5.2",
+  "Pillow>=10.0",
+  "py7zr>=0.20",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.4"]
+
+[project.scripts]
+xrom = "xrom.app:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+ignore = [
+  "BLE001",  # broad excepts keep GUI threads/providers alive by design
+  "S110",    # try/except/pass on optional callbacks
+  "TRY002",  # tests
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

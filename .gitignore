@@ -1,0 +1,21 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+# User-local runtime data (dbs, caches, art, downloads, creds) — never commit
+.xrom/
+config.json
+# External binaries fetched at runtime (see src/xrom/tools_fetch.py) — never commit
+tools/bin/
+# Credentials / keys — NEVER commit (user-local only, Hydra-style)
+ArchiveOrgKeys.txt
+*.keys
+*secret*.txt
+*secret*.json
+# Local notes
+*.orig.md
