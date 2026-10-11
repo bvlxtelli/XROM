@@ -1,115 +1,110 @@
-# XROM — Xbox ROM Download Manager & Organizer (PC)
+# XROM
 
-**XROM** is a download manager and ROM organizer for Original Xbox, Xbox 360 and XBLA
-collections on PC. Search game metadata (covers, genres, year), resolve files from
-sources **you** configure, download with queue/retry/resume, organize the library with
-clean folder names, and optionally send games to a modded console over FTP.
+Your Xbox collection manager for PC: find games with covers, download them, organize everything and send to your console over FTP.
 
-Python + CustomTkinter, managed with `uv`. See `docs/CREDITS.md` for all attributions.
+[Report Bug](https://github.com/bvlxtelli/XROM/issues/new?labels=bug&title=%5BBug%5D+Simple+description+of+the+bug) · [Request Feature](https://github.com/bvlxtelli/XROM/issues/new?labels=enhancement&title=%5BFeature%5D+Simple+description+of+your+request)
 
-## Vision (v1)
+[![Forks](https://img.shields.io/github/forks/bvlxtelli/XROM?style=for-the-badge)](https://github.com/bvlxtelli/XROM/network/members) [![Stargazers](https://img.shields.io/github/stars/bvlxtelli/XROM?style=for-the-badge)](https://github.com/bvlxtelli/XROM/stargazers) [![Issues](https://img.shields.io/github/issues/bvlxtelli/XROM?style=for-the-badge)](https://github.com/bvlxtelli/XROM/issues)
+[![Downloads](https://img.shields.io/github/downloads/bvlxtelli/XROM/total?style=for-the-badge&label=Downloads&color=2EA430)](https://github.com/bvlxtelli/XROM/releases/latest)
 
-**ONLY a download manager + ROM organizer.** Metadata is the source of truth
-(IGDB / ScreenScraper / TheGamesDB + local cache); file sources only *resolve*
-what the metadata found. Extraction to GOD/XEX and console-side tooling are
-explicitly out of scope for v1 (see Roadmap).
+## About The Project
 
-## Important: your links, your account (Hydra-style)
+XROM is a download manager and organizer for Original Xbox, Xbox 360 and XBLA games on PC. Search a game, see its cover and info, download it, keep your library tidy and send games to a modded console — all in one window.
 
-- XROM ships with **no ROMs, no download links, no credentials, no API keys**.
-- `archive.org` access uses **your own free account** (email/password login or your
-  S3 keys), entered in the Config tab and stored locally (password in OS keyring
-  when available, never in the repo).
-- Extra file sources can be imported as **Hydra-compatible JSON**
-  (`{name, downloads:[{title,fileSize,uris,uploadDate}]}`) — again, yours.
-- Metadata APIs (IGDB via your Twitch app, ScreenScraper/TheGamesDB accounts) also
-  use keys you provide. Respect each provider's terms (non-commercial, attribution,
-  rate limits) — details in `docs/CREDITS.md`.
+Works like [Hydra Launcher](https://github.com/hydralauncher/hydra): the app ships with **no games, no links, no accounts**. You add your own archive.org account (free) and your own source files, and XROM does the rest.
 
-## Features (v0.1.0)
+Features:
 
-- Metadata search: IGDB (genres/year/companies/platforms 11=Xbox, 12=X360),
-  TheGamesDB + ScreenScraper fallback, cover-art cache, sqlite library.
-- archive.org resolver: collection IDs ported from X-Store (`microsoft_xbox_*`,
-  `microsoft_xbox360_*`, digital/DLC/XBLIG), CSRF login + S3 auth, metadata cache.
-- Download manager: persistent queue (sqlite), retry w/ backoff, resume via
-  `Range`, mirror fallback, pause/cancel, per-item log.
-- Organizer: `Title [Year] [TitleID]` folders, sanitized (X-Store rules), unique
-  names, `.xrom.json` sidecar per game; optional delete-after-FTP.
-- Extractor (user's files only): unzip/7z + `extract-xiso` (Xbox),
-  `Iso2God` (X360, user-provided exe), XBLA title-dir copy. Per-item platform
-  picker in Queue; external binaries never bundled.
-- X-Store keys import: point Config at your local `ArchiveOrgKeys.txt`
-  (stays on your disk — secret kept in memory, never saved to repo).
-- FTP: `ftplib` + Aurora/DashLaunch presets, recursive upload, test connection.
-- External binaries (extract-xiso, ISO2GOD) are **never bundled** — fetched at
-  runtime or user-provided (see `src/xrom/tools_fetch.py`).
+-   Search
+    -   Find games with cover art, year and genres.
+    -   Links travel with the game: each result shows how many downloads it has.
+-   Download
+    -   Queue with pause, resume, retry and speed/ETA.
+    -   Links break? XROM tries mirrors automatically.
+-   Library
+    -   Games get clean folders: `Title [Year] [ID]`.
+    -   Add games first, download later — entries can wait as a wishlist.
+    -   Link a ROM file you already have (iso/zip/7z) without downloading.
+-   Extract
+    -   Unpacks zip/7z, Xbox ISOs (extract-xiso) and Xbox 360 ISOs (Iso2God).
+    -   XBLA titles are detected and copied to the right layout.
+-   Send to console
+    -   One click sends a game over FTP (Aurora/DashLaunch presets).
+    -   Optionally deletes the local copy after a successful send.
 
-## Quickstart
+### Built With
 
-```powershell
-uv venv
-uv pip install -e ".[dev]"
-uv run xrom        # GUI
-uv run pytest      # tests
-```
+-   [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+-   [![CustomTkinter](https://img.shields.io/badge/CustomTkinter-GUI-2EA430?style=for-the-badge)](https://github.com/TomSchimansky/CustomTkinter)
+-   [![uv](https://img.shields.io/badge/uv-packages-4B275F?style=for-the-badge)](https://docs.astral.sh/uv/)
 
-No `uv`? `python -m venv .venv && .venv\Scripts\pip install -e ".[dev]"`.
+## Changelog
 
-## Credits
+### v0.2.0
 
-XROM unifies Xbox open-source knowledge Hydra-style — every source is credited
-in [`docs/CREDITS.md`](docs/CREDITS.md) (licenses in [`docs/THIRD_PARTY.md`](docs/THIRD_PARTY.md)):
+-   New: library as wishlist (add now, download later, per-game send/remove).
+-   New: progress dialogs for FTP and extraction (bar + log + cancel).
+-   New: queue speed/ETA, icon buttons, covers in the library.
 
-| Source | Author(s) | License | Used for |
-|---|---|---|---|
-| [X-Store](https://github.com/951261/X-Store) | 951261 + contributors | AGPL-3.0 | archive.org auth, collection IDs, download + sanitize + XBLA logic |
-| [extract-xiso-gui](https://github.com/KilLo445/extract-xiso-gui) | KilLo445, batch by bvlxtelli | MIT | extractor flags + batch logic |
-| [extract-xiso](https://github.com/XboxDev/extract-xiso) | `in <in@fishtank.com>`, XboxDev | BSD | XISO backend (runtime-fetched, never bundled) |
-| [Hydra Launcher](https://github.com/hydralauncher/hydra) | Hydra team | open source | source model + download-manager UX (see below) |
-| IGDB / ScreenScraper / TheGamesDB | Twitch / community | service terms | metadata + covers (your keys) |
+### v0.1.0
 
-XROM itself is **AGPL-3.0-or-later** (`LICENSE`). Rule: anything new used inside
-XROM gets a credit row before merge.
+-   First release: search, queue, organizer, extractor, FTP, single-file `.exe`.
 
-## Relationship with Hydra
+## Getting Started
 
-[Hydra](https://github.com/hydralauncher/hydra) is the model for XROM: a
-launcher/manager that ships **no games, no links, no accounts** — the user
-brings their own download sources as JSON files
-(`{name, downloads:[{title,fileSize,uris,uploadDate}]}`), and the app manages
-queue, retry, extraction and library. XROM applies exactly that philosophy to
-the Xbox (Original / 360 / XBLA) scene, unifying the scene's open-source pieces
-(X-Store download logic, extract-xiso extraction, community metadata DBs) under
-one manager. XROM can **import Hydra-format source files** (Sources tab) and
-credits the Hydra team for the format and UX ideas — no Hydra code is vendored.
+### Prerequisites
 
-## Open source & community 🤝
+-   Windows 10 or newer.
+-   A free [archive.org](https://archive.org/account/signup) account (for downloads).
+-   A modded Xbox 360 on the same network (only if you want FTP sending).
 
-**XROM is 100% open source (AGPL-3.0-or-later) and we count on the community.**
-There is no company behind this — every improvement comes from people who use it.
+### Installation
 
-Ways to help (no coding required for most):
+1.  Head over to the [latest release](https://github.com/bvlxtelli/XROM/releases/latest)
+2.  Download `XROM.exe`
+3.  Run it — no install needed
 
-- **Test & report**: open an issue with your platform, steps and logs.
-- **New file sources**: a `SourceProvider` is a single file (~60 lines) —
-  see `src/xrom/sources/hydra_json.py` for the template.
-- **Metadata & art**: IGDB/ScreenScraper/TheGamesDB are community databases;
-  correcting a cover or genre there improves XROM for everyone.
-- **Docs & translations**: README, guides, UI strings.
-- **Code**: PRs welcome — run `uv run pytest` + `ruff check src tests` first.
+### First steps
 
-Rules for contributions: keep it legal and clean — **no ROMs, no download links,
-no credentials, no API keys** in issues, PRs or code (same Hydra-style policy as
-the app itself). By contributing you agree your work lands under AGPL-3.0-or-later
-and gets a credit row in `docs/CREDITS.md`.
+1.  Open the **Config** tab and log in with your archive.org account
+    (or import your X-Store `ArchiveOrgKeys.txt` — it never leaves your PC).
+2.  Go to **Search**, type a game, pick Xbox / Xbox 360 / XBLA.
+3.  Click **Download** on a result, or **🔗 Links** to choose between versions.
+4.  Watch it in **Queue**, then find it organized in **Library**.
+5.  Select a game in **Library** and hit **⬆** to send it to your console.
 
-## Keywords
+### Installation (from source)
 
-xbox 360 rom manager pc, archive.org xbox downloader python, iso2god gui python,
-extract-xiso gui python, xbox ftp aurora customtkinter, xbla organizer.
+1.  Install [uv](https://docs.astral.sh/uv/getting-started/installation/)
+2.  `uv venv && uv pip install -e ".[dev]"`
+3.  `uv run xrom` to open the app, `uv run pytest` for tests
+
+## Help links
+
+-   Create your archive.org account: [archive.org/account/signup](https://archive.org/account/signup)
+-   Richer covers/info (optional keys): [IGDB via Twitch](https://api-docs.igdb.com/#account-creation), [ScreenScraper](https://www.screenscraper.fr/), [TheGamesDB](https://thegamesdb.net/)
+-   The projects XROM builds on: [X-Store](https://github.com/951261/X-Store), [extract-xiso-gui](https://github.com/KilLo445/extract-xiso-gui), [Hydra Launcher](https://github.com/hydralauncher/hydra)
+-   Stuck? [Open an issue](https://github.com/bvlxtelli/XROM/issues) — logs from `~/.xrom` help a lot
 
 ## License
 
-AGPL-3.0-or-later (inherited from X-Store logic). See `LICENSE`, `docs/CREDITS.md`,
-`docs/THIRD_PARTY.md`.
+Distributed under the AGPL-3.0 License (inherited from X-Store). See `LICENSE` for more information.
+
+## Credits
+
+-   Download logic: [X-Store](https://github.com/951261/X-Store) by [@951261](https://github.com/951261)
+-   Extractor UI logic + batch mode: [extract-xiso-gui](https://github.com/KilLo445/extract-xiso-gui) by [@KilLo445](https://github.com/KilLo445) and [@bvlxtelli](https://github.com/bvlxtelli)
+-   Source model + manager idea: [Hydra Launcher](https://github.com/hydralauncher/hydra)
+-   XISO backend: [extract-xiso](https://github.com/XboxDev/extract-xiso)
+-   Full list with licenses: [`docs/CREDITS.md`](docs/CREDITS.md)
+
+## Community
+
+XROM is 100% open source and counts on you: testing, issues, new file sources
+(one file each — see `src/xrom/sources/hydra_json.py`), docs and code.
+Rule for contributions: no ROMs, no links, no credentials, no keys — same as the app.
+
+## Contact
+
+-   Issues: [bvlxtelli/XROM](https://github.com/bvlxtelli/XROM/issues)
+-   More: [@bvlxtelli](https://github.com/bvlxtelli)
