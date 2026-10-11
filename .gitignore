@@ -17,5 +17,7 @@ ArchiveOrgKeys.txt
 *.keys
 *secret*.txt
 *secret*.json
+# Tests stay local — never commit
+tests/
 # Local notes
 *.orig.md
