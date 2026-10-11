@@ -11,7 +11,7 @@ from pathlib import Path
 from . import art_cache, ia_auth, organizer
 from .config import XromConfig, get_ia_password, set_ia_password
 from .downloader import DownloadManager
-from .ftp_client import test_connection, upload_tree
+from .ftp_client import test_connection
 from .library import Library
 from .metadata.igdb import IgdbProvider
 from .metadata.thegamesdb import TheGamesDbProvider
@@ -62,6 +62,7 @@ class App:
         self.statusbar.pack(fill="x", padx=12, pady=(0, 6))
         self._card_widgets: list = []  # (game, subtitle label, dl button)
         self._qrows: dict = {}  # queue id -> widgets (in-place updates)
+        self._speed: dict = {}  # queue id -> (timestamp, bytes) for B/s + ETA
         self._searching = False
         self._build_search()
         self._build_queue()
@@ -242,6 +243,75 @@ class App:
 
         self.root.after(0, _apply)
 
+    # -- tracked jobs (bar + % + log + cancel, never blocks UI) ------------
+    def run_tracked(self, title: str, worker) -> None:
+        """Run worker(prog, log, is_cancelled)->str in a thread with a dialog.
+
+        prog(frac|None, text): None = indeterminate spinner.
+        """
+        ctk = self.ctk
+        dlg = ctk.CTkToplevel(self.root)
+        dlg.title(title)
+        dlg.geometry("540x360")
+        bar = ctk.CTkProgressBar(dlg, width=480)
+        bar.pack(padx=20, pady=(14, 4))
+        bar.set(0.0)
+        lab = ctk.CTkLabel(dlg, text="Starting…", anchor="w")
+        lab.pack(padx=20, fill="x")
+        logbox = ctk.CTkTextbox(dlg, height=170)
+        logbox.pack(padx=20, pady=6, fill="both", expand=True)
+        logbox.configure(state="disabled")
+        cancelled = threading.Event()
+        ctk.CTkButton(dlg, text="Cancel",
+                      command=cancelled.set).pack(pady=(0, 12))
+
+        def prog(frac, text: str = "") -> None:
+            def _u() -> None:
+                try:
+                    if frac is None:
+                        bar.configure(mode="indeterminate")
+                        bar.start()
+                    else:
+                        bar.stop()
+                        bar.configure(mode="determinate")
+                        bar.set(max(0.0, min(1.0, frac)))
+                    if text:
+                        lab.configure(text=text)
+                except Exception:
+                    pass
+
+            self.root.after(0, _u)
+
+        def log(msg: str) -> None:
+            def _u() -> None:
+                try:
+                    logbox.configure(state="normal")
+                    logbox.insert("end", (msg or "")[-500:] + "\n")
+                    logbox.see("end")
+                    logbox.configure(state="disabled")
+                except Exception:
+                    pass
+
+            self.root.after(0, _u)
+
+        def bg() -> None:
+            try:
+                result = worker(prog, log, cancelled.is_set)
+            except Exception as e:
+                log(f"{type(e).__name__}: {e}")
+                err = e
+                self.root.after(
+                    0, lambda _e=err: (bar.stop(),
+                                       lab.configure(text=f"Failed: {_e}")))
+                self._set_status(f"{title} failed: {err}")
+                return
+            self.root.after(
+                0, lambda: (bar.stop(), bar.configure(mode="determinate"),
+                            bar.set(1.0), lab.configure(text=result)))
+            self._set_status(result)
+
+        threading.Thread(target=bg, daemon=True).start()
+
     # -- game dialog (Hydra-style: pick a link or link a local ROM) ------
     def open_game_dialog(self, g: Game) -> None:
         ctk = self.ctk
@@ -404,12 +474,27 @@ class App:
             self._qempty.destroy()
             self._qempty = None
         for qid, q in items.items():
+            import time as _time
+
             total = q["total"] or 0
+            now, done = _time.time(), q["bytes_done"]
+            prev = self._speed.get(qid)
+            rate_txt, eta_txt = "", ""
+            if prev and q["status"] == "active" and now > prev[0]:
+                rate = max(0.0, (done - prev[1]) / (now - prev[0]))
+                if rate > 0:
+                    rate_txt = f" — {_fmt_size(int(rate))}/s"
+                    if total and total > 0 and done < total:
+                        eta = int((total - done) / rate)
+                        eta_txt = f" — ETA {eta // 60}m {eta % 60:02d}s"
+            self._speed[qid] = (now, done)
             if total and total > 0:
-                frac = min(1.0, q["bytes_done"] / total)
+                frac = min(1.0, done / total)
                 pct = f"{100 * frac:.1f}%"
             else:
-                frac, pct = 0.0, f"{q['bytes_done'] // 1024} KiB"
+                # Unknown size: pulse while active so it looks alive.
+                frac = (now * 0.6) % 1.0 if q["status"] == "active" else 0.0
+                pct = f"{done // 1024} KiB"
             if qid not in self._qrows:
                 row = self.ctk.CTkFrame(self.qlist)
                 row.pack(fill="x", padx=4, pady=3)
@@ -438,7 +523,8 @@ class App:
                 self._qrows[qid] = {"frame": row, "title": title,
                                     "bar": bar, "err": err}
             w = self._qrows[qid]
-            w["title"].configure(text=f"[{q['status']}] {q['game_title']} — {pct}")
+            w["title"].configure(
+                text=f"[{q['status']}] {q['game_title']} — {pct}{rate_txt}{eta_txt}")
             w["bar"].set(frac)
             w["err"].configure(text=(q["error"] or "")[:100])
 
@@ -451,40 +537,38 @@ class App:
         rows = [q for q in self.lib.list_queue() if q["id"] == item_id]
         if not rows:
             return
+        row = rows[0]
         plat = self._row_platform.get(item_id, "xbox360")
-        threading.Thread(target=self._extract_bg,
-                         args=(rows[0], plat), daemon=True).start()
+
+        def worker(prog, log, _cancelled) -> str:
+            from . import extractor
+            from .tools_fetch import TOOLS
+
+            if self.cfg.extract_xiso_exe:
+                import shutil
+
+                self.cfg.bin_dir.mkdir(parents=True, exist_ok=True)
+                target = self.cfg.bin_dir / TOOLS["extract-xiso"]["exe"]
+                if not target.exists():
+                    shutil.copy2(self.cfg.extract_xiso_exe, target)
+            prog(None, "Starting extraction…")
+
+            def _prog(done: int, total: int) -> None:
+                prog(done / total if total else None,
+                     f"Unpacking {done}/{total}…")
+
+            out = extractor.extract_download(
+                row["dest"], plat,
+                self.cfg.library_dir or self.cfg.home / "library",
+                self.cfg.bin_dir, self.cfg.iso2god_exe, log, _prog)
+            self.root.after(0, self.refresh_library)
+            return f"Extracted → {out}"
+
+        self.run_tracked(f"Extract — {row['game_title']}", worker)
 
     def _extract_bg(self, row: dict, platform: str) -> None:
-        from . import extractor
-        from .tools_fetch import TOOLS
-
-        # Honor explicit tool paths from Config (local only, never bundled).
-        if self.cfg.extract_xiso_exe:
-            import shutil
-
-            self.cfg.bin_dir.mkdir(parents=True, exist_ok=True)
-            target = self.cfg.bin_dir / TOOLS["extract-xiso"]["exe"]
-            if not target.exists():
-                try:
-                    shutil.copy2(self.cfg.extract_xiso_exe, target)
-                except OSError as e:
-                    self._set_status(f"Tool copy failed: {e}")
-                    return
-
-        def log(msg: str) -> None:
-            self._set_status(msg.splitlines()[-1][:120] if msg else "")
-
-        try:
-            out = extractor.extract_download(
-                row["dest"], platform,
-                self.cfg.library_dir or self.cfg.home / "library",
-                self.cfg.bin_dir, self.cfg.iso2god_exe, log)
-        except Exception as e:
-            self._set_status(f"Extract failed: {e}")
-            return
-        self._set_status(f"Extracted → {out}")
-        self.refresh_library()
+        """Legacy direct entry (kept for API compat); prefer do_extract."""
+        self.do_extract(row["id"])
 
     # -- library --------------------------------------------------------
     def _build_library(self) -> None:
@@ -542,25 +626,47 @@ class App:
     def ftp_send_first(self) -> None:
         games = self.lib.list_games()
         if not games or not games[0]["folder"]:
+            self._set_status("Library empty — nothing to send.")
             return
+        folder = Path(games[0]["folder"])
+        title = games[0]["title"]
         f = self.cfg.ftp
-        ok, msg = test_connection(f.host, f.port, f.user, f.password)
-        if not ok:
-            self._set_status(f"FTP failed: {msg}")
-            self.tabs.set("Config")
-            return
-        try:
-            n = upload_tree(games[0]["folder"], f.remote_dir, f.host, f.port,
-                            f.user, f.password, f.passive)
-        except Exception as e:
-            self._set_status(f"FTP upload failed: {e}")
-            return
-        self._set_status(f"FTP: {n} file(s) sent.")
-        if self.cfg.delete_after_ftp:
-            import shutil
+        host, port, user, password = f.host, f.port, f.user, f.password
 
-            shutil.rmtree(games[0]["folder"], ignore_errors=True)
-            self.refresh_library()
+        def worker(prog, log, is_cancelled) -> str:
+            from .ftp_client import TransferAborted, upload_tree
+
+            prog(None, f"Connecting to {host}…")
+            ok, msg = test_connection(host, port, user, password)
+            if not ok:
+                raise RuntimeError(msg)
+            log(f"Connected: {msg[:80]}")
+            files = [p for p in sorted(folder.rglob("*")) if p.is_file()]
+            total_bytes = sum(p.stat().st_size for p in files)
+            seen: dict[str, int] = {}
+
+            def _cb(path: str, done: int, _total) -> None:
+                seen[path] = done
+                frac = sum(seen.values()) / total_bytes if total_bytes else 0
+                prog(frac, f"{Path(path).name} — {100 * frac:.1f}% "
+                           f"({_fmt_size(sum(seen.values()))} / "
+                           f"{_fmt_size(total_bytes)})")
+
+            try:
+                n = upload_tree(folder, f.remote_dir, host, port, user,
+                                password, f.passive, _cb, is_cancelled)
+            except TransferAborted:
+                return "FTP cancelled."
+            log(f"Sent {n} file(s) to {f.remote_dir}.")
+            if self.cfg.delete_after_ftp:
+                import shutil
+
+                shutil.rmtree(folder, ignore_errors=True)
+                self.root.after(0, self.refresh_library)
+                return f"FTP: {n} file(s) sent, local copy deleted."
+            return f"FTP: {n} file(s) sent."
+
+        self.run_tracked(f"FTP — {title}", worker)
 
     # -- sources --------------------------------------------------------
     def _build_sources(self) -> None:

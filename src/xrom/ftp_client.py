@@ -10,6 +10,11 @@ from collections.abc import Callable
 from pathlib import Path
 
 ProgressCb = Callable[[str, int, int | None], None]  # path, done, total
+CancelCb = Callable[[], bool]
+
+
+class TransferAborted(Exception):
+    """Raised when the caller's cancel flag trips mid-transfer."""
 
 
 def _connect(host: str, port: int, user: str, password: str,
@@ -49,13 +54,16 @@ def _mkdirs(ftp: ftplib.FTP, remote: str) -> None:
 
 def upload_tree(local_dir: str | Path, remote_dir: str, host: str, port: int,
                 user: str, password: str, passive: bool = False,
-                cb: ProgressCb | None = None) -> int:
-    """Recursive upload. Returns file count. Raises on failure."""
+                cb: ProgressCb | None = None,
+                cancelled: CancelCb | None = None) -> int:
+    """Recursive upload. Returns file count. Raises on failure/abort."""
     local_dir = Path(local_dir)
     files = [p for p in sorted(local_dir.rglob("*")) if p.is_file()]
     count = 0
     with _connect(host, port, user, password, passive, 60) as ftp:
         for path in files:
+            if cancelled and cancelled():
+                raise TransferAborted("cancelled by user")
             rel = path.relative_to(local_dir).as_posix()
             remote = _to_xbox_path(f"{remote_dir}/{rel}")
             _mkdirs(ftp, remote.rsplit("/", 1)[0] if "/" in remote else "")
@@ -64,6 +72,8 @@ def upload_tree(local_dir: str | Path, remote_dir: str, host: str, port: int,
 
             def _cb(block: bytes, _p=path, _t=total) -> None:
                 nonlocal done
+                if cancelled and cancelled():
+                    raise TransferAborted("cancelled by user")
                 done += len(block)
                 if cb:
                     cb(str(_p), done, _t)

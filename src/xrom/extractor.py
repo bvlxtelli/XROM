@@ -22,6 +22,7 @@ from . import organizer
 from .tools_fetch import tool_path
 
 LogCb = Callable[[str], None]
+ProgCb = Callable[[int, int], None]  # (done_files, total_files)
 
 _XBLA_CONTENT = {"000D0000", "00007000", "00004000", "00000002", "00020000",
                  "000B0000", "000E0000", "02000000", "00030000", "00009000"}
@@ -32,14 +33,19 @@ def _lognoop(msg: str) -> None:
     _ = msg
 
 
+def _prognoop(done: int, total: int) -> None:
+    _ = (done, total)
+
+
 def unzip_sanitized(archive: Path, dest: Path,
-                    log: LogCb = _lognoop) -> Path:
+                    log: LogCb = _lognoop,
+                    prog: ProgCb = _prognoop) -> Path:
     """Extract zip, sanitizing each name part (X-Store AppendRelativePath)."""
     dest.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive) as zf:
-        for info in zf.infolist():
-            if info.is_dir():
-                continue
+        entries = [i for i in zf.infolist() if not i.is_dir()]
+        for n, info in enumerate(entries, 1):
+            prog(n, len(entries))
             parts = [organizer.sanitize(p) for p in
                      Path(info.filename).parts]
             if any(p in ("", ".", "..") for p in parts):
@@ -121,7 +127,8 @@ def run_iso2god(iso: Path, dest: Path, iso2god_exe: Path,
 
 def extract_download(path: str | Path, platform: str, out_root: str | Path,
                      bin_dir: Path, iso2god_exe: str = "",
-                     log: LogCb = _lognoop) -> Path:
+                     log: LogCb = _lognoop,
+                     prog: ProgCb = _prognoop) -> Path:
     """Full pipeline: archive -> workdir -> backend -> out_root/<game>."""
     src = Path(path)
     out_root = Path(out_root)
@@ -132,9 +139,13 @@ def extract_download(path: str | Path, platform: str, out_root: str | Path,
 
     suffix = src.suffix.lower()
     if suffix == ".zip":
-        unzip_sanitized(src, work, log)
+        log("Unpacking zip…")
+        unzip_sanitized(src, work, log, prog)
     elif suffix == ".7z":
+        log("Unpacking 7z…")
+        prog(0, 1)
         un7z(src, work, log)
+        prog(1, 1)
     elif suffix == ".iso":
         work = src.parent  # backend reads the iso in place
     else:
@@ -142,6 +153,7 @@ def extract_download(path: str | Path, platform: str, out_root: str | Path,
 
     dest = organizer.unique(out_root / organizer.sanitize(src.stem))
     if platform == "xbla":
+        log("Locating XBLA title dir…")
         found = find_xbla_dir(work) or work
         shutil.copytree(found, dest)
         log(f"XBLA copied: {found} -> {dest}")
@@ -150,9 +162,11 @@ def extract_download(path: str | Path, platform: str, out_root: str | Path,
     if iso is None:
         raise RuntimeError("no .iso found after unpacking")
     if platform == "xbox":
+        log("Running extract-xiso…")
         return run_extract_xiso(iso, dest, bin_dir, log=log)
     if platform == "xbox360":
         if not iso2god_exe:
             raise RuntimeError("Iso2God path not set — see Config tab.")
+        log("Running Iso2God…")
         return run_iso2god(iso, dest, Path(iso2god_exe), log)
     raise ValueError(f"unknown platform: {platform}")
