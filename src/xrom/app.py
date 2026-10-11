@@ -55,15 +55,20 @@ class App:
         self.root.title("XROM 0.1.0 — Xbox ROM Manager")
         self.root.geometry("1000x680")
         self.tabs = ctk.CTkTabview(self.root)
-        self.tabs.pack(fill="both", expand=True, padx=8, pady=8)
+        self.tabs.pack(fill="both", expand=True, padx=8, pady=(8, 2))
         for name in ("Search", "Queue", "Library", "Sources", "Config"):
             self.tabs.add(name)
+        self.statusbar = ctk.CTkLabel(self.root, text="Ready.", anchor="w")
+        self.statusbar.pack(fill="x", padx=12, pady=(0, 6))
+        self._card_widgets: list = []  # (game, subtitle label, dl button)
+        self._qrows: dict = {}  # queue id -> widgets (in-place updates)
+        self._searching = False
         self._build_search()
         self._build_queue()
         self._build_library()
         self._build_sources()
         self._build_config()
-        self.root.after(1000, self._poll)
+        self.root.after(1500, self._poll)
 
     # -- search ---------------------------------------------------------
     def _build_search(self) -> None:
@@ -77,12 +82,16 @@ class App:
         self.q_entry.bind("<Return>", lambda _e: self.do_search())
         self.plat = ctk.CTkOptionMenu(top, values=PLATFORMS)
         self.plat.pack(side="left", padx=6)
-        ctk.CTkButton(top, text="Search metadata",
-                      command=self.do_search).pack(side="left", padx=6)
+        self.search_btn = ctk.CTkButton(top, text="Search",
+                                        command=self.do_search)
+        self.search_btn.pack(side="left", padx=6)
         self.status = ctk.CTkLabel(top, text="")
         self.status.pack(side="left", padx=6)
         self.cards = ctk.CTkScrollableFrame(f)
         self.cards.pack(fill="both", expand=True, padx=6, pady=6)
+        ctk.CTkLabel(self.cards,
+                     text="Search for a game above — covers, genres and links show up here.").pack(
+                         padx=8, pady=20)
 
     def _providers(self):
         provs = []
@@ -96,13 +105,25 @@ class App:
         return provs
 
     def do_search(self) -> None:
+        if self._searching:
+            return
         q = self.q_entry.get().strip()
         if not q:
             return
         plat = self.plat.get()
+        self._searching = True
+        self.search_btn.configure(state="disabled", text="Searching…")
         self.status.configure(text="Searching...")
         threading.Thread(target=self._search_bg, args=(q, plat),
                          daemon=True).start()
+
+    @staticmethod
+    def _subtitle(g: Game) -> str:
+        return " | ".join(x for x in
+                          [str(g.year or ""),
+                           ", ".join(g.genres[:3]),
+                           g.platform,
+                           f"{len(g.links)} link(s)"] if x)
 
     def _search_bg(self, q: str, plat: str) -> None:
         from . import linker
@@ -115,6 +136,8 @@ class App:
                 out.append(Game(title=f"[{p.name} error: {e}]",
                                 platform=plat))
         self.results = out[:60]
+        # Render immediately (covers/links fill in progressively).
+        self.root.after(0, self._render_results)
         # Links live ON the game: match user's file sources by name.
         try:
             arch = ArchiveOrgProvider(self.session, self.cfg.cache_dir)
@@ -123,32 +146,48 @@ class App:
                     continue
                 self._set_status(f"Linking {i + 1}/{len(self.results)}...")
                 linker.attach(g, arch.files_for(g.title, plat or g.platform))
+                self.root.after(0, lambda i=i: self._update_card(i))
         except Exception as e:
             self._set_status(f"Link attach failed: {e}")
+        finally:
+            self.root.after(0, self._search_done)
+
+    def _search_done(self) -> None:
+        self._searching = False
+        self.search_btn.configure(state="normal", text="Search")
+
+    def _update_card(self, index: int) -> None:
+        """Refresh one card after its links arrived (no full rebuild)."""
+        if index >= len(self._card_widgets):
             return
-        self.root.after(0, self._render_results)
+        g, sub, dl = self._card_widgets[index]
+        sub.configure(text=self._subtitle(g))
+        if g.links:
+            dl.configure(state="normal")
 
     def _render_results(self) -> None:
         for w in self.cards.winfo_children():
             w.destroy()
+        self._card_widgets = []
         self.status.configure(text=f"{len(self.results)} result(s)")
+        if not self.results:
+            self.ctk.CTkLabel(self.cards, text="No results.").pack(padx=8,
+                                                                   pady=20)
+            return
         for g in self.results:
             row = self.ctk.CTkFrame(self.cards)
             row.pack(fill="x", padx=4, pady=4)
             icon = self.ctk.CTkLabel(row, text="🎮",
-                                     font=("Segoe UI", 28), width=64)
+                                     font=("Segoe UI", 28), width=64,
+                                     height=64)
             icon.pack(side="left", padx=8)
             txt = self.ctk.CTkFrame(row, fg_color="transparent")
             txt.pack(side="left", fill="x", expand=True)
-            subtitle = " | ".join(x for x in
-                                  [str(g.year or ""),
-                                   ", ".join(g.genres[:3]),
-                                   g.platform,
-                                   f"{len(g.links)} link(s)"] if x)
             self.ctk.CTkLabel(txt, text=g.title,
                               font=("Segoe UI", 14, "bold"),
                               anchor="w").pack(fill="x")
-            self.ctk.CTkLabel(txt, text=subtitle, anchor="w").pack(fill="x")
+            sub = self.ctk.CTkLabel(txt, text=self._subtitle(g), anchor="w")
+            sub.pack(fill="x")
             self.ctk.CTkButton(row, text="🔗 Links", width=80,
                                command=lambda g=g: self.open_game_dialog(g)).pack(
                                    side="right", padx=2)
@@ -160,6 +199,7 @@ class App:
             self.ctk.CTkButton(row, text="+ Library", width=90,
                                command=lambda g=g: self.add_library(g)).pack(
                                    side="right", padx=2)
+            self._card_widgets.append((g, sub, dl))
             row.bind("<Button-1>",
                      lambda _e, g=g: self.open_game_dialog(g))
             threading.Thread(target=self._cover_bg, args=(g, icon),
@@ -193,7 +233,14 @@ class App:
         self.tabs.set("Queue")
 
     def _set_status(self, msg: str) -> None:
-        self.root.after(0, lambda: self.status.configure(text=msg))
+        def _apply() -> None:
+            self.statusbar.configure(text=msg or "Ready.")
+            try:
+                self.status.configure(text=msg)
+            except Exception:
+                pass
+
+        self.root.after(0, _apply)
 
     # -- game dialog (Hydra-style: pick a link or link a local ROM) ------
     def open_game_dialog(self, g: Game) -> None:
@@ -319,8 +366,12 @@ class App:
     def _poll(self) -> None:
         if self._queue_dirty:
             self._queue_dirty = False
-            self.refresh_queue()
-        self.root.after(1000, self._poll)
+            try:
+                if self.tabs.get() == "Queue":
+                    self.refresh_queue()
+            except Exception:
+                pass
+        self.root.after(1500, self._poll)
 
     def _thumb(self, path: str, size: tuple[int, int] = (48, 48)):
         """Local cover -> CTkImage, or None (caller keeps placeholder)."""
@@ -339,30 +390,57 @@ class App:
             return None
 
     def refresh_queue(self) -> None:
-        for w in self.qlist.winfo_children():
-            w.destroy()
-        for q in self.lib.list_queue():
+        """Reconcile rows in place: no flicker, progress bars keep flowing."""
+        items = {q["id"]: q for q in self.lib.list_queue()}
+        for qid in list(self._qrows):
+            if qid not in items:
+                self._qrows.pop(qid)["frame"].destroy()
+        if not items and not self._qrows:
+            if not getattr(self, "_qempty", None):
+                self._qempty = self.ctk.CTkLabel(
+                    self.qlist, text="Queue empty — download something from Search.")
+                self._qempty.pack(padx=8, pady=20)
+        elif getattr(self, "_qempty", None):
+            self._qempty.destroy()
+            self._qempty = None
+        for qid, q in items.items():
             total = q["total"] or 0
-            pct = f"{100 * q['bytes_done'] / total:.1f}%" if total and total > 0 else f"{q['bytes_done'] // 1024} KiB"
-            row = self.ctk.CTkFrame(self.qlist)
-            row.pack(fill="x", padx=4, pady=3)
-            self.ctk.CTkLabel(
-                row, text=f"[{q['status']}] {q['game_title']} — {pct}").pack(
-                    side="left", padx=8)
-            if q["error"]:
-                self.ctk.CTkLabel(row, text=q["error"][:80],
-                                  text_color="orange").pack(side="left")
-            plat = self.ctk.CTkOptionMenu(row, values=PLATFORMS, width=100)
-            plat.set(self._row_platform.get(q["id"], "xbox360"))
-            plat.configure(command=lambda v, i=q["id"]: self._row_platform.__setitem__(i, v))
-            plat.pack(side="right", padx=2)
-            for emoji, fn in (
-                    ("🗑", lambda i=q["id"]: self.delete_queue_item(i)),
-                    ("▶", lambda i=q["id"]: self.dm.resume(i)),
-                    ("⏸", lambda i=q["id"]: self.dm.pause(i)),
-                    ("📦", lambda i=q["id"]: self.do_extract(i))):
-                self.ctk.CTkButton(row, text=emoji, width=36,
-                                   command=fn).pack(side="right", padx=1)
+            if total and total > 0:
+                frac = min(1.0, q["bytes_done"] / total)
+                pct = f"{100 * frac:.1f}%"
+            else:
+                frac, pct = 0.0, f"{q['bytes_done'] // 1024} KiB"
+            if qid not in self._qrows:
+                row = self.ctk.CTkFrame(self.qlist)
+                row.pack(fill="x", padx=4, pady=3)
+                left = self.ctk.CTkFrame(row, fg_color="transparent")
+                left.pack(side="left", fill="x", expand=True, padx=8)
+                title = self.ctk.CTkLabel(left, text="", anchor="w")
+                title.pack(fill="x")
+                bar = self.ctk.CTkProgressBar(left, width=300)
+                bar.pack(fill="x", pady=(2, 0))
+                bar.set(0.0)
+                err = self.ctk.CTkLabel(left, text="", anchor="w",
+                                        text_color="orange")
+                err.pack(fill="x")
+                plat = self.ctk.CTkOptionMenu(row, values=PLATFORMS, width=100)
+                plat.set(self._row_platform.get(qid, "xbox360"))
+                plat.configure(
+                    command=lambda v, i=qid: self._row_platform.__setitem__(i, v))
+                plat.pack(side="right", padx=2)
+                for emoji, fn in (
+                        ("🗑", lambda i=qid: self.delete_queue_item(i)),
+                        ("▶", lambda i=qid: self.dm.resume(i)),
+                        ("⏸", lambda i=qid: self.dm.pause(i)),
+                        ("📦", lambda i=qid: self.do_extract(i))):
+                    self.ctk.CTkButton(row, text=emoji, width=36,
+                                       command=fn).pack(side="right", padx=1)
+                self._qrows[qid] = {"frame": row, "title": title,
+                                    "bar": bar, "err": err}
+            w = self._qrows[qid]
+            w["title"].configure(text=f"[{q['status']}] {q['game_title']} — {pct}")
+            w["bar"].set(frac)
+            w["err"].configure(text=(q["error"] or "")[:100])
 
     def delete_queue_item(self, item_id: int) -> None:
         self.dm.cancel(item_id)
@@ -427,7 +505,14 @@ class App:
             return
         for w in self.glist.winfo_children():
             w.destroy()
-        for g in self.lib.list_games():
+        games = self.lib.list_games()
+        if not games:
+            self.ctk.CTkLabel(
+                self.glist,
+                text="Library empty — search a game and + Library it.").pack(
+                    padx=8, pady=20)
+            return
+        for g in games:
             row = self.ctk.CTkFrame(self.glist)
             row.pack(fill="x", padx=4, pady=3)
             icon = self.ctk.CTkLabel(row, text="🎮",
