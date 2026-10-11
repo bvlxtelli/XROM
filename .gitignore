@@ -19,5 +19,9 @@ ArchiveOrgKeys.txt
 *secret*.json
 # Tests stay local — never commit
 tests/
+# PyInstaller artifacts
+dist/
+build/
+*.spec
 # Local notes
 *.orig.md
