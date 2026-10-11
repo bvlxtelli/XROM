@@ -84,6 +84,26 @@ the Xbox (Original / 360 / XBLA) scene, unifying the scene's open-source pieces
 one manager. XROM can **import Hydra-format source files** (Sources tab) and
 credits the Hydra team for the format and UX ideas — no Hydra code is vendored.
 
+## Open source & community 🤝
+
+**XROM is 100% open source (AGPL-3.0-or-later) and we count on the community.**
+There is no company behind this — every improvement comes from people who use it.
+
+Ways to help (no coding required for most):
+
+- **Test & report**: open an issue with your platform, steps and logs.
+- **New file sources**: a `SourceProvider` is a single file (~60 lines) —
+  see `src/xrom/sources/hydra_json.py` for the template.
+- **Metadata & art**: IGDB/ScreenScraper/TheGamesDB are community databases;
+  correcting a cover or genre there improves XROM for everyone.
+- **Docs & translations**: README, guides, UI strings.
+- **Code**: PRs welcome — run `uv run pytest` + `ruff check src tests` first.
+
+Rules for contributions: keep it legal and clean — **no ROMs, no download links,
+no credentials, no API keys** in issues, PRs or code (same Hydra-style policy as
+the app itself). By contributing you agree your work lands under AGPL-3.0-or-later
+and gets a credit row in `docs/CREDITS.md`.
+
 ## Keywords
 
 xbox 360 rom manager pc, archive.org xbox downloader python, iso2god gui python,

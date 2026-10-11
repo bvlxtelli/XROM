@@ -76,3 +76,12 @@ class Library:
 
     def close(self) -> None:
         self._con.close()
+
+    def remove_queue(self, item_id: int) -> None:
+        self._con.execute("DELETE FROM queue WHERE id=?", (item_id,))
+        self._con.commit()
+
+    def remove_game(self, title: str, platform: str) -> None:
+        self._con.execute("DELETE FROM games WHERE title=? AND platform=?",
+                          (title, platform))
+        self._con.commit()

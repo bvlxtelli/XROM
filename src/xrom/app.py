@@ -48,6 +48,7 @@ class App:
                                   on_change=self._dirty_queue)
         self._queue_dirty = False
         self._row_platform: dict[int, str] = {}
+        self._thumbs: list = []  # keep PhotoImage refs alive
         self.results: list[Game] = []
 
         self.root = ctk.CTk()
@@ -130,7 +131,6 @@ class App:
     def _render_results(self) -> None:
         for w in self.cards.winfo_children():
             w.destroy()
-        self._thumbs: list = []  # keep PhotoImage refs alive
         self.status.configure(text=f"{len(self.results)} result(s)")
         for g in self.results:
             row = self.ctk.CTkFrame(self.cards)
@@ -322,6 +322,22 @@ class App:
             self.refresh_queue()
         self.root.after(1000, self._poll)
 
+    def _thumb(self, path: str, size: tuple[int, int] = (48, 48)):
+        """Local cover -> CTkImage, or None (caller keeps placeholder)."""
+        try:
+            if not path:
+                return None
+            from PIL import Image
+
+            img = Image.open(path)
+            img.thumbnail((size[0] * 2, size[1] * 2))
+            photo = self.ctk.CTkImage(light_image=img, dark_image=img,
+                                      size=size)
+            self._thumbs.append(photo)
+            return photo
+        except Exception:
+            return None
+
     def refresh_queue(self) -> None:
         for w in self.qlist.winfo_children():
             w.destroy()
@@ -340,13 +356,18 @@ class App:
             plat.set(self._row_platform.get(q["id"], "xbox360"))
             plat.configure(command=lambda v, i=q["id"]: self._row_platform.__setitem__(i, v))
             plat.pack(side="right", padx=2)
-            for label, fn in (
-                    ("Extract", lambda i=q["id"]: self.do_extract(i)),
-                    ("Pause", lambda i=q["id"]: self.dm.pause(i)),
-                    ("Resume", lambda i=q["id"]: self.dm.resume(i)),
-                    ("Cancel", lambda i=q["id"]: self.dm.cancel(i))):
-                self.ctk.CTkButton(row, text=label, width=70,
-                                   command=fn).pack(side="right", padx=2)
+            for emoji, fn in (
+                    ("🗑", lambda i=q["id"]: self.delete_queue_item(i)),
+                    ("▶", lambda i=q["id"]: self.dm.resume(i)),
+                    ("⏸", lambda i=q["id"]: self.dm.pause(i)),
+                    ("📦", lambda i=q["id"]: self.do_extract(i))):
+                self.ctk.CTkButton(row, text=emoji, width=36,
+                                   command=fn).pack(side="right", padx=1)
+
+    def delete_queue_item(self, item_id: int) -> None:
+        self.dm.cancel(item_id)
+        self.lib.remove_queue(item_id)
+        self.refresh_queue()
 
     def do_extract(self, item_id: int) -> None:
         rows = [q for q in self.lib.list_queue() if q["id"] == item_id]
@@ -409,10 +430,29 @@ class App:
         for g in self.lib.list_games():
             row = self.ctk.CTkFrame(self.glist)
             row.pack(fill="x", padx=4, pady=3)
+            icon = self.ctk.CTkLabel(row, text="🎮",
+                                     font=("Segoe UI", 22), width=56)
+            icon.pack(side="left", padx=6)
+            photo = self._thumb(g["cover_path"] or "", (48, 48))
+            if photo is not None:
+                icon.configure(image=photo, text="")
+            txt = self.ctk.CTkFrame(row, fg_color="transparent")
+            txt.pack(side="left", fill="x", expand=True)
             self.ctk.CTkLabel(
-                row, text=f"{g['title']} [{g['platform']}] {g['year'] or ''}").pack(
-                    side="left", padx=8)
-            self.ctk.CTkLabel(row, text=g["folder"] or "").pack(side="left")
+                txt, text=f"{g['title']} [{g['platform']}] {g['year'] or ''}",
+                font=("Segoe UI", 13, "bold"), anchor="w").pack(fill="x")
+            self.ctk.CTkLabel(txt, text=g["folder"] or "",
+                              anchor="w").pack(fill="x")
+            self.ctk.CTkButton(
+                row, text="🗑", width=36,
+                command=lambda t=g["title"], p=g["platform"]: self.delete_game(t, p)
+            ).pack(side="right", padx=4)
+
+    def delete_game(self, title: str, platform: str) -> None:
+        """Removes the library ENTRY (files on disk are kept)."""
+        self.lib.remove_game(title, platform)
+        self._set_status(f"Removed from library: {title} (files kept)")
+        self.refresh_library()
 
     def ftp_send_first(self) -> None:
         games = self.lib.list_games()
