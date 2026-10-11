@@ -63,7 +63,8 @@ File sources are never browsed directly — they only *attach* links.
 2. **Credit everything**: new dep/logic → row in `docs/CREDITS.md` +
    `docs/THIRD_PARTY.md` before merge. Repo is AGPL-3.0-or-later.
 3. `tests/` stays local-only (gitignored) but must pass: `pytest -q`.
-4. Lint is law: `ruff check`, `ruff format --check` (CI enforces).
+   CI covers `src` only (ruff + format + smoke import) for this reason.
+4. Lint is law: `ruff check`, `ruff format --check` (CI enforces on `src`).
    Config: `pyproject.toml` (`E4/E7/E9/F/I/UP/B`).
 5. Threads for all I/O; UI updates via `after()`; missing art is normal
    (placeholder, silent).

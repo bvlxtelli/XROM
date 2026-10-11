@@ -8,6 +8,10 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv venv
       - run: uv pip install -e ".[dev]"
-      - run: uv run ruff check src tests
-      - run: uv run ruff format --check src tests
-      - run: uv run pytest -q
+      # NOTE: tests/ is intentionally local-only (never committed), so CI
+      # lints/formats src and runs a headless smoke import instead of pytest.
+      # Full suite runs locally: uv run pytest -q
+      - run: uv run ruff check src
+      - run: uv run ruff format --check src
+      - run: uv run python -m compileall -q src
+      - run: uv run python -c "import xrom.app, xrom.downloader, xrom.extractor, xrom.ftp_client, xrom.linker; print('smoke ok')"
