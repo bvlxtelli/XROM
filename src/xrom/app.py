@@ -22,6 +22,16 @@ from .sources.hydra_json import HydraJsonProvider
 PLATFORMS = ["xbox", "xbox360", "xbla"]
 
 
+def _fmt_size(n: int | None) -> str:
+    if not n:
+        return "?"
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024 or unit == "TB":
+            return f"{n:.1f} {unit}" if unit != "B" else f"{n} B"
+        n /= 1024
+    return f"{n:.1f} TB"
+
+
 class App:
     def __init__(self) -> None:
         import customtkinter as ctk
@@ -94,6 +104,8 @@ class App:
                          daemon=True).start()
 
     def _search_bg(self, q: str, plat: str) -> None:
+        from . import linker
+
         out: list[Game] = []
         for p in self._providers():
             try:
@@ -102,59 +114,183 @@ class App:
                 out.append(Game(title=f"[{p.name} error: {e}]",
                                 platform=plat))
         self.results = out[:60]
+        # Links live ON the game: match user's file sources by name.
+        try:
+            arch = ArchiveOrgProvider(self.session, self.cfg.cache_dir)
+            for i, g in enumerate(self.results):
+                if g.links or g.title.startswith("["):
+                    continue
+                self._set_status(f"Linking {i + 1}/{len(self.results)}...")
+                linker.attach(g, arch.files_for(g.title, plat or g.platform))
+        except Exception as e:
+            self._set_status(f"Link attach failed: {e}")
+            return
         self.root.after(0, self._render_results)
 
     def _render_results(self) -> None:
         for w in self.cards.winfo_children():
             w.destroy()
+        self._thumbs: list = []  # keep PhotoImage refs alive
         self.status.configure(text=f"{len(self.results)} result(s)")
         for g in self.results:
             row = self.ctk.CTkFrame(self.cards)
             row.pack(fill="x", padx=4, pady=4)
+            icon = self.ctk.CTkLabel(row, text="🎮",
+                                     font=("Segoe UI", 28), width=64)
+            icon.pack(side="left", padx=8)
+            txt = self.ctk.CTkFrame(row, fg_color="transparent")
+            txt.pack(side="left", fill="x", expand=True)
             subtitle = " | ".join(x for x in
                                   [str(g.year or ""),
                                    ", ".join(g.genres[:3]),
-                                   g.platform] if x)
-            self.ctk.CTkLabel(row, text=g.title,
-                              font=("Segoe UI", 14, "bold")).pack(
-                                  side="left", padx=8)
-            self.ctk.CTkLabel(row, text=subtitle).pack(side="left", padx=8)
-            self.ctk.CTkButton(row, text="Resolve",
-                               command=lambda g=g: self.do_resolve(g)).pack(
-                                   side="right", padx=4)
-            self.ctk.CTkButton(row, text="+ Library",
+                                   g.platform,
+                                   f"{len(g.links)} link(s)"] if x)
+            self.ctk.CTkLabel(txt, text=g.title,
+                              font=("Segoe UI", 14, "bold"),
+                              anchor="w").pack(fill="x")
+            self.ctk.CTkLabel(txt, text=subtitle, anchor="w").pack(fill="x")
+            self.ctk.CTkButton(row, text="🔗 Links", width=80,
+                               command=lambda g=g: self.open_game_dialog(g)).pack(
+                                   side="right", padx=2)
+            dl = self.ctk.CTkButton(row, text="Download", width=90,
+                                    command=lambda g=g: self.do_download(g))
+            if not g.links:
+                dl.configure(state="disabled")
+            dl.pack(side="right", padx=2)
+            self.ctk.CTkButton(row, text="+ Library", width=90,
                                command=lambda g=g: self.add_library(g)).pack(
-                                   side="right", padx=4)
-            threading.Thread(target=self._cover_bg, args=(g,),
+                                   side="right", padx=2)
+            row.bind("<Button-1>",
+                     lambda _e, g=g: self.open_game_dialog(g))
+            threading.Thread(target=self._cover_bg, args=(g, icon),
                              daemon=True).start()
 
-    def _cover_bg(self, g: Game) -> None:
-        art_cache.cached_art(g.cover_url, self.cfg.art_dir)
-
-    def do_resolve(self, g: Game) -> None:
-        self.status.configure(text=f"Resolving {g.title} on archive.org...")
-        threading.Thread(target=self._resolve_bg, args=(g,),
-                         daemon=True).start()
-
-    def _resolve_bg(self, g: Game) -> None:
+    def _cover_bg(self, g: Game, icon) -> None:
+        """Missing art is normal — keep the placeholder, move on."""
         try:
-            files = ArchiveOrgProvider(self.session,
-                                       self.cfg.cache_dir).resolve(g)
-        except Exception as e:
-            self._set_status(f"Resolve failed: {e}")
+            p = art_cache.cached_art(g.cover_url, self.cfg.art_dir)
+            if not p:
+                return
+            from PIL import Image
+
+            img = Image.open(p)
+            img.thumbnail((64, 64))
+            photo = self.ctk.CTkImage(light_image=img, dark_image=img,
+                                      size=(64, 64))
+            self._thumbs.append(photo)
+            self.root.after(0, lambda: icon.configure(image=photo, text=""))
+        except Exception:
+            pass
+
+    def do_download(self, g: Game) -> None:
+        if not g.links:
             return
-        if not files:
-            self._set_status("No ZIP/7Z found on archive.org for this title.")
-            return
-        f = files[0]
+        d = g.links[0]
         dest = str(Path(self.cfg.downloads_dir or self.cfg.home / "downloads")
-                   / (f.extra.get("filename") or f.title))
-        self.dm.enqueue(g.title, f.uris[0], dest, mirrors=f.uris[1:])
-        self._set_status(f"Queued: {f.title}")
+                   / (d.extra.get("filename") or d.title))
+        self.dm.enqueue(g.title, d.uris[0], dest, mirrors=d.uris[1:])
+        self._set_status(f"Queued: {d.title} ({len(g.links)} link(s) on game)")
         self.tabs.set("Queue")
 
     def _set_status(self, msg: str) -> None:
         self.root.after(0, lambda: self.status.configure(text=msg))
+
+    # -- game dialog (Hydra-style: pick a link or link a local ROM) ------
+    def open_game_dialog(self, g: Game) -> None:
+        ctk = self.ctk
+        dlg = ctk.CTkToplevel(self.root)
+        dlg.title(g.title)
+        dlg.geometry("620x480")
+        dlg.grab_set()
+        ctk.CTkLabel(dlg, text=g.title,
+                     font=("Segoe UI", 16, "bold")).pack(padx=10, pady=(10, 2),
+                                                         anchor="w")
+        info = " | ".join(x for x in [str(g.year or ""),
+                                      ", ".join(g.genres[:4]),
+                                      g.platform] if x)
+        ctk.CTkLabel(dlg, text=info).pack(padx=10, anchor="w")
+        if g.summary:
+            box = ctk.CTkTextbox(dlg, height=90)
+            box.pack(padx=10, pady=6, fill="x")
+            box.insert("1.0", g.summary[:800])
+            box.configure(state="disabled")
+
+        ctk.CTkLabel(dlg, text="Download links on this game:").pack(
+            padx=10, pady=(6, 2), anchor="w")
+        choice = ctk.IntVar(value=0)
+        links_frame = ctk.CTkScrollableFrame(dlg, height=140)
+        links_frame.pack(padx=10, fill="x")
+        if g.links:
+            for i, d in enumerate(g.links):
+                ctk.CTkRadioButton(
+                    links_frame, variable=choice, value=i,
+                    text=f"{d.title}  [{_fmt_size(d.file_size)}]  ({d.source})"
+                ).pack(anchor="w", padx=6, pady=2)
+        else:
+            ctk.CTkLabel(links_frame,
+                         text="No links — link a local ROM below.").pack(
+                             padx=6, pady=6)
+
+        ctk.CTkLabel(dlg, text="Or link a local ROM (iso/zip/7z/...):").pack(
+            padx=10, pady=(6, 2), anchor="w")
+        local_row = ctk.CTkFrame(dlg, fg_color="transparent")
+        local_row.pack(padx=10, fill="x")
+        local_entry = ctk.CTkEntry(local_row, width=380,
+                                   placeholder_text="C:\\...\\game.iso")
+        local_entry.pack(side="left", padx=(0, 6))
+
+        def browse() -> None:
+            from tkinter import filedialog
+
+            path = filedialog.askopenfilename(
+                title=f"Link local ROM — {g.title}",
+                filetypes=[("Disc/archive images",
+                            "*.iso *.zip *.7z *.rar *.001"),
+                           ("All files", "*.*")])
+            if path:
+                local_entry.delete(0, "end")
+                local_entry.insert(0, path)
+
+        ctk.CTkButton(local_row, text="Browse...",
+                      command=browse).pack(side="left")
+
+        btns = ctk.CTkFrame(dlg, fg_color="transparent")
+        btns.pack(padx=10, pady=10, fill="x")
+
+        def download_selected() -> None:
+            if g.links:
+                self.do_download_index(g, choice.get())
+                dlg.destroy()
+
+        def link_local() -> None:
+            path = local_entry.get().strip()
+            if not path:
+                return
+            cover = art_cache.cached_art(g.cover_url, self.cfg.art_dir)
+            organizer.organize(
+                g, self.cfg.library_dir or self.cfg.home / "library",
+                str(cover) if cover else "", local_path=path)
+            self.lib.upsert_game(g, folder=str(Path(path).parent),
+                                 cover_path=str(cover) if cover else "")
+            self._set_status(f"Linked local ROM: {path}")
+            self.refresh_library()
+            dlg.destroy()
+
+        if g.links:
+            ctk.CTkButton(btns, text="Download selected",
+                          command=download_selected).pack(side="left", padx=4)
+        ctk.CTkButton(btns, text="Link local file",
+                      command=link_local).pack(side="left", padx=4)
+
+    def do_download_index(self, g: Game, index: int) -> None:
+        if not g.links or index >= len(g.links):
+            return
+        d = g.links[index]
+        dest = str(Path(self.cfg.downloads_dir or self.cfg.home / "downloads")
+                   / (d.extra.get("filename") or d.title))
+        self.dm.enqueue(g.title, d.uris[0], dest, mirrors=d.uris[1:])
+        self._set_status(f"Queued: {d.title}")
+        self.tabs.set("Queue")
 
     def add_library(self, g: Game) -> None:
         cover = art_cache.cached_art(g.cover_url, self.cfg.art_dir)

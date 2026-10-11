@@ -42,7 +42,7 @@ def unique(path: Path) -> Path:
 
 
 def organize(game: Game, library_root: str | Path,
-             cover_path: str = "") -> Path:
+             cover_path: str = "", local_path: str = "") -> Path:
     """Create the game folder + .xrom.json sidecar. Returns folder path."""
     root = Path(library_root)
     root.mkdir(parents=True, exist_ok=True)
@@ -52,8 +52,12 @@ def organize(game: Game, library_root: str | Path,
         "title": game.title, "platform": game.platform, "year": game.year,
         "genres": game.genres, "summary": game.summary,
         "cover_url": game.cover_url, "cover_path": cover_path,
+        "local_path": local_path,  # Hydra-style linked local ROM (iso/...)
         "companies": game.companies, "ids": game.ids,
         "title_id": game.title_id,
+        "links": [{"title": d.title, "uris": d.uris,
+                   "file_size": d.file_size, "source": d.source}
+                  for d in game.links],
     }
     (folder / ".xrom.json").write_text(json.dumps(sidecar, indent=2),
                                        encoding="utf-8")
