@@ -4,6 +4,7 @@ Source of truth = metadata (Game). File sources (user's own) only ATTACH
 Downloadables to Game.links via normalized title matching. archive.org (or
 any source) is never browsed directly by the user in this flow.
 """
+
 from __future__ import annotations
 
 import re
@@ -38,16 +39,13 @@ def score(game_title: str, file_name: str) -> int:
     return 0
 
 
-def attach(game: Game, downloadables: list[Downloadable],
-           replace: bool = False) -> Game:
+def attach(game: Game, downloadables: list[Downloadable], replace: bool = False) -> Game:
     """Rank matching files and attach them to game.links (best first)."""
-    ranked = sorted(((score(game.title, d.title), d) for d in downloadables),
-                    key=lambda t: -t[0])
+    ranked = sorted(((score(game.title, d.title), d) for d in downloadables), key=lambda t: -t[0])
     matched = [d for s, d in ranked if s > 0]
     if replace:
         game.links = matched
     else:
         seen = {u for d in game.links for u in d.uris}
-        game.links.extend(d for d in matched
-                          if not any(u in seen for u in d.uris))
+        game.links.extend(d for d in matched if not any(u in seen for u in d.uris))
     return game

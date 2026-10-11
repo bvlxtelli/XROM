@@ -77,7 +77,10 @@ Features:
 
 1.  Install [uv](https://docs.astral.sh/uv/getting-started/installation/)
 2.  `uv venv && uv pip install -e ".[dev]"`
-3.  `uv run xrom` to open the app, `uv run pytest` for tests
+3.  `uv run xrom` to open the app
+
+Developers: `uv run ruff check src tests`, `uv run ruff format --check src tests`,
+`uv run pytest -q` (CI runs all three).
 
 ## Help links
 

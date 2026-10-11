@@ -1,4 +1,5 @@
 """Shared data models. Pure dataclasses — no I/O, no network."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

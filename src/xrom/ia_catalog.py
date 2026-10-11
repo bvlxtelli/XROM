@@ -5,6 +5,7 @@ copied verbatim (credit 951261/X-Store, AGPL-3.0).
 URL building: base = alternate_locations.workable[0].server+dir (fallback
 server+dir) + "/" + quote(name, safe="-_.~")  == X-Store UrlEncodeQuery.
 """
+
 from __future__ import annotations
 
 import json
@@ -122,8 +123,7 @@ def _cache_path(cache_dir: Path, ident: str) -> Path:
     return cache_dir / f"{ident}.json"
 
 
-def fetch_metadata(ident: str, s: requests.Session, cache_dir: Path,
-                   force: bool = False) -> dict:
+def fetch_metadata(ident: str, s: requests.Session, cache_dir: Path, force: bool = False) -> dict:
     """GET /metadata/<ident> with local cache (X-Store game:\\cache behavior)."""
     cache_dir.mkdir(parents=True, exist_ok=True)
     cp = _cache_path(cache_dir, ident)
@@ -132,8 +132,7 @@ def fetch_metadata(ident: str, s: requests.Session, cache_dir: Path,
             return json.loads(cp.read_text(encoding="utf-8"))
         except ValueError:
             pass
-    r = s.get(f"{BASE}/metadata/{ident}", headers={"Referer": f"{BASE}/"},
-              timeout=60)
+    r = s.get(f"{BASE}/metadata/{ident}", headers={"Referer": f"{BASE}/"}, timeout=60)
     if r.status_code in (401, 403):  # X-Store clears cache on auth failure
         cp.unlink(missing_ok=True)
     r.raise_for_status()
@@ -155,8 +154,7 @@ def file_url(base: str, name: str) -> str:
     return base + "/" + quote(name, safe="-_.~")
 
 
-def candidates(query: str, platform: str, s: requests.Session,
-               cache_dir: Path) -> list[dict]:
+def candidates(query: str, platform: str, s: requests.Session, cache_dir: Path) -> list[dict]:
     """Filter files by name substring + format ZIP|7Z (X-Store parse logic)."""
     out: list[dict] = []
     q = query.lower()
@@ -177,7 +175,13 @@ def candidates(query: str, platform: str, s: requests.Session,
                     size = int(size) if size is not None else None
                 except (ValueError, TypeError):
                     size = None
-                out.append({"name": name, "url": file_url(base, name),
-                            "size": size, "format": f.get("format"),
-                            "ident": ident})
+                out.append(
+                    {
+                        "name": name,
+                        "url": file_url(base, name),
+                        "size": size,
+                        "format": f.get("format"),
+                        "ident": ident,
+                    }
+                )
     return out

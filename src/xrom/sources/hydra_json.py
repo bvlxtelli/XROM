@@ -6,6 +6,7 @@ Format (see https://docs.hydralauncher.gg/download-sources):
                   "uris": ["..."], "uploadDate": "..."}]}
 fileSize like "15.2 GB" is parsed to bytes (best effort).
 """
+
 from __future__ import annotations
 
 import json
@@ -43,8 +44,11 @@ class HydraJsonProvider(SourceProvider):
         for d in self._downloads:
             if q not in str(d.get("title", "")).lower():
                 continue
-            game = Game(title=d.get("title", "Unknown"), platform=platform,
-                        ids={"hydra_source": self.source_name})
+            game = Game(
+                title=d.get("title", "Unknown"),
+                platform=platform,
+                ids={"hydra_source": self.source_name},
+            )
             game.links.extend(self._to_downloadable(d))
             out.append(game)
         return out
@@ -55,11 +59,15 @@ class HydraJsonProvider(SourceProvider):
             uris = [uris]
         if not uris:
             return []
-        return [Downloadable(title=d.get("title", "Unknown"),
-                             uris=list(uris),
-                             file_size=parse_size(d.get("fileSize", "")),
-                             upload_date=d.get("uploadDate", ""),
-                             source=self.source_name)]
+        return [
+            Downloadable(
+                title=d.get("title", "Unknown"),
+                uris=list(uris),
+                file_size=parse_size(d.get("fileSize", "")),
+                upload_date=d.get("uploadDate", ""),
+                source=self.source_name,
+            )
+        ]
 
     def resolve(self, game: Game) -> list[Downloadable]:
         if game.links:

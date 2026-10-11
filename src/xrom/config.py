@@ -3,6 +3,7 @@
 archive.org password: OS keyring (service "xrom", account = email) when the
 `keyring` package is installed, else env XROM_IA_PASSWORD, else prompt.
 """
+
 from __future__ import annotations
 
 import json
@@ -70,9 +71,14 @@ class XromConfig:
         return self.home / "config.json"
 
     def ensure_dirs(self) -> None:
-        for d in (self.home, self.cache_dir, self.art_dir, self.bin_dir,
-                  Path(self.library_dir or self.home / "library"),
-                  Path(self.downloads_dir or self.home / "downloads")):
+        for d in (
+            self.home,
+            self.cache_dir,
+            self.art_dir,
+            self.bin_dir,
+            Path(self.library_dir or self.home / "library"),
+            Path(self.downloads_dir or self.home / "downloads"),
+        ):
             d.mkdir(parents=True, exist_ok=True)
 
     def save(self) -> None:
@@ -93,8 +99,9 @@ class XromConfig:
             data["home"] = Path(data["home"])
         cfg = cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
         if isinstance(ftp, dict):
-            cfg.ftp = FtpPreset(**{k: v for k, v in ftp.items()
-                                   if k in FtpPreset.__dataclass_fields__})
+            cfg.ftp = FtpPreset(
+                **{k: v for k, v in ftp.items() if k in FtpPreset.__dataclass_fields__}
+            )
         return cfg
 
 

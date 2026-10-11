@@ -9,6 +9,7 @@ Backends:
   xbox360 -> Iso2God.exe -i <iso> -o <dest>    (closed freeware, user path)
   xbla    -> XBLA title-dir detect (xblaParsing.cpp logic) + copytree
 """
+
 from __future__ import annotations
 
 import re
@@ -24,8 +25,18 @@ from .tools_fetch import tool_path
 LogCb = Callable[[str], None]
 ProgCb = Callable[[int, int], None]  # (done_files, total_files)
 
-_XBLA_CONTENT = {"000D0000", "00007000", "00004000", "00000002", "00020000",
-                 "000B0000", "000E0000", "02000000", "00030000", "00009000"}
+_XBLA_CONTENT = {
+    "000D0000",
+    "00007000",
+    "00004000",
+    "00000002",
+    "00020000",
+    "000B0000",
+    "000E0000",
+    "02000000",
+    "00030000",
+    "00009000",
+}
 _HEX8 = re.compile(r"^[0-9a-fA-F]{8}$")
 
 
@@ -37,17 +48,16 @@ def _prognoop(done: int, total: int) -> None:
     _ = (done, total)
 
 
-def unzip_sanitized(archive: Path, dest: Path,
-                    log: LogCb = _lognoop,
-                    prog: ProgCb = _prognoop) -> Path:
+def unzip_sanitized(
+    archive: Path, dest: Path, log: LogCb = _lognoop, prog: ProgCb = _prognoop
+) -> Path:
     """Extract zip, sanitizing each name part (X-Store AppendRelativePath)."""
     dest.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive) as zf:
         entries = [i for i in zf.infolist() if not i.is_dir()]
         for n, info in enumerate(entries, 1):
             prog(n, len(entries))
-            parts = [organizer.sanitize(p) for p in
-                     Path(info.filename).parts]
+            parts = [organizer.sanitize(p) for p in Path(info.filename).parts]
             if any(p in ("", ".", "..") for p in parts):
                 log(f"skip unsafe entry: {info.filename}")
                 continue
@@ -93,42 +103,42 @@ def find_xbla_dir(root: Path) -> Path | None:
     return matches[0] if len(matches) == 1 else None
 
 
-def run_extract_xiso(iso: Path, dest: Path, bin_dir: Path,
-                     skip_sysupdate: bool = False,
-                     log: LogCb = _lognoop) -> Path:
+def run_extract_xiso(
+    iso: Path, dest: Path, bin_dir: Path, skip_sysupdate: bool = False, log: LogCb = _lognoop
+) -> Path:
     exe = tool_path("extract-xiso", bin_dir)
     if exe is None:
-        raise RuntimeError("extract-xiso not found — set path in Config "
-                           "or fetch it (Tools).")
+        raise RuntimeError("extract-xiso not found — set path in Config or fetch it (Tools).")
     dest.mkdir(parents=True, exist_ok=True)
-    cmd = [str(exe)] + (["-s"] if skip_sysupdate else []) + \
-        ["-d", str(dest), "-x", str(iso)]
+    cmd = [str(exe)] + (["-s"] if skip_sysupdate else []) + ["-d", str(dest), "-x", str(iso)]
     log(f"$ {' '.join(cmd)}")
-    p = subprocess.run(cmd, check=False, capture_output=True, text=True,
-                       errors="replace")
+    p = subprocess.run(cmd, check=False, capture_output=True, text=True, errors="replace")
     log(p.stdout[-2000:] + p.stderr[-2000:])
     if p.returncode != 0:
         raise RuntimeError(f"extract-xiso failed (rc={p.returncode})")
     return dest
 
 
-def run_iso2god(iso: Path, dest: Path, iso2god_exe: Path,
-                log: LogCb = _lognoop) -> Path:
+def run_iso2god(iso: Path, dest: Path, iso2god_exe: Path, log: LogCb = _lognoop) -> Path:
     dest.mkdir(parents=True, exist_ok=True)
     cmd = [str(iso2god_exe), "-i", str(iso), "-o", str(dest)]
     log(f"$ {' '.join(cmd)}")
-    p = subprocess.run(cmd, check=False, capture_output=True, text=True,
-                       errors="replace")
+    p = subprocess.run(cmd, check=False, capture_output=True, text=True, errors="replace")
     log(p.stdout[-2000:] + p.stderr[-2000:])
     if p.returncode != 0:
         raise RuntimeError(f"Iso2God failed (rc={p.returncode})")
     return dest
 
 
-def extract_download(path: str | Path, platform: str, out_root: str | Path,
-                     bin_dir: Path, iso2god_exe: str = "",
-                     log: LogCb = _lognoop,
-                     prog: ProgCb = _prognoop) -> Path:
+def extract_download(
+    path: str | Path,
+    platform: str,
+    out_root: str | Path,
+    bin_dir: Path,
+    iso2god_exe: str = "",
+    log: LogCb = _lognoop,
+    prog: ProgCb = _prognoop,
+) -> Path:
     """Full pipeline: archive -> workdir -> backend -> out_root/<game>."""
     src = Path(path)
     out_root = Path(out_root)

@@ -3,6 +3,7 @@
 Design note: Hydra-style UX (queue + multi-mirror fallback), X-Store-derived
 semantics (streaming chunks, Content-Length validation, identity encoding).
 """
+
 from __future__ import annotations
 
 import threading
@@ -20,10 +21,14 @@ CHUNK = 4 * 1024 * 1024
 
 
 class DownloadManager:
-    def __init__(self, library: Library, max_retries: int = 3,
-                 on_change: Callable[[], None] | None = None,
-                 auth_headers: dict | None = None,
-                 cookies: dict | None = None) -> None:
+    def __init__(
+        self,
+        library: Library,
+        max_retries: int = 3,
+        on_change: Callable[[], None] | None = None,
+        auth_headers: dict | None = None,
+        cookies: dict | None = None,
+    ) -> None:
         self.library = library
         self.max_retries = max_retries
         self.on_change = on_change
@@ -36,8 +41,9 @@ class DownloadManager:
         self._worker: threading.Thread | None = None
 
     # -- queue API ------------------------------------------------------
-    def enqueue(self, game_title: str, url: str, dest: str,
-                mirrors: list[str] | None = None) -> int:
+    def enqueue(
+        self, game_title: str, url: str, dest: str, mirrors: list[str] | None = None
+    ) -> int:
         from .models import QueueItem
 
         item_id = self.library.enqueue(QueueItem(game_title, url, dest))
@@ -101,8 +107,9 @@ class DownloadManager:
     # -- worker ---------------------------------------------------------
     def _loop(self) -> None:
         while True:
-            pending = [q for q in self.library.list_queue(active_only=True)
-                       if q["status"] == "queued"]
+            pending = [
+                q for q in self.library.list_queue(active_only=True) if q["status"] == "queued"
+            ]
             if not pending:
                 break
             item = pending[0]
@@ -122,27 +129,24 @@ class DownloadManager:
                 if item_id in self._cancel or item_id in self._pause:
                     return
                 try:
-                    self._fetch(item_id, url,
-                                lambda d, t, st: self._progress(item_id, d, t))
-                    self.library.update_queue(item_id, status="done",
-                                              error="")
+                    self._fetch(item_id, url, lambda d, t, st: self._progress(item_id, d, t))
+                    self.library.update_queue(item_id, status="done", error="")
                     self._notify()
                     return
                 except (requests.RequestException, OSError) as e:
                     error = f"{type(e).__name__}: {e}"
-            self.library.update_queue(item_id, attempts=attempt + 1,
-                                      error=error)
-            time.sleep(min(2 ** attempt, 30))
+            self.library.update_queue(item_id, attempts=attempt + 1, error=error)
+            time.sleep(min(2**attempt, 30))
         self.library.update_queue(item_id, status="error", error=error)
         self._notify()
 
     def _progress(self, item_id: int, done: int, total: int | None) -> None:
-        self.library.update_queue(item_id, bytes_done=done,
-                                  total=total if total is not None else -1)
+        self.library.update_queue(
+            item_id, bytes_done=done, total=total if total is not None else -1
+        )
 
     def _fetch(self, item_id: int, url: str, cb: ProgressCb) -> None:
-        row = next(q for q in self.library.list_queue()
-                   if q["id"] == item_id)
+        row = next(q for q in self.library.list_queue() if q["id"] == item_id)
         dest = Path(row["dest"])
         dest.parent.mkdir(parents=True, exist_ok=True)
         done = dest.stat().st_size if dest.exists() else 0

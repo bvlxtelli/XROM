@@ -1,4 +1,5 @@
 """Cover-art disk cache: url -> ~/.xrom/art/<sha1>.jpg."""
+
 from __future__ import annotations
 
 import hashlib

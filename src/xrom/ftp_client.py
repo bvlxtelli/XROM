@@ -3,6 +3,7 @@
 Console FTPDs (FtpDll) speak POSIX-style paths: "Hdd1/Games/...".
 Listings may contain non-UTF8 names -> force latin-1 decoding.
 """
+
 from __future__ import annotations
 
 import ftplib
@@ -17,8 +18,9 @@ class TransferAborted(Exception):
     """Raised when the caller's cancel flag trips mid-transfer."""
 
 
-def _connect(host: str, port: int, user: str, password: str,
-             passive: bool, timeout: int) -> ftplib.FTP:
+def _connect(
+    host: str, port: int, user: str, password: str, passive: bool, timeout: int
+) -> ftplib.FTP:
     ftp = ftplib.FTP(timeout=timeout)
     ftp.encoding = "latin-1"
     ftp.connect(host.strip(), port)
@@ -27,8 +29,9 @@ def _connect(host: str, port: int, user: str, password: str,
     return ftp
 
 
-def test_connection(host: str, port: int, user: str, password: str,
-                    timeout: int = 10) -> tuple[bool, str]:
+def test_connection(
+    host: str, port: int, user: str, password: str, timeout: int = 10
+) -> tuple[bool, str]:
     try:
         with _connect(host, port, user, password, False, timeout) as ftp:
             banner = str(ftp.getwelcome())
@@ -52,10 +55,17 @@ def _mkdirs(ftp: ftplib.FTP, remote: str) -> None:
             pass  # exists
 
 
-def upload_tree(local_dir: str | Path, remote_dir: str, host: str, port: int,
-                user: str, password: str, passive: bool = False,
-                cb: ProgressCb | None = None,
-                cancelled: CancelCb | None = None) -> int:
+def upload_tree(
+    local_dir: str | Path,
+    remote_dir: str,
+    host: str,
+    port: int,
+    user: str,
+    password: str,
+    passive: bool = False,
+    cb: ProgressCb | None = None,
+    cancelled: CancelCb | None = None,
+) -> int:
     """Recursive upload. Returns file count. Raises on failure/abort."""
     local_dir = Path(local_dir)
     files = [p for p in sorted(local_dir.rglob("*")) if p.is_file()]

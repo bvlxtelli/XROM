@@ -1,4 +1,5 @@
 """Persistent sqlite store: library games + download queue."""
+
 from __future__ import annotations
 
 import json
@@ -36,11 +37,19 @@ class Library:
     # -- games ----------------------------------------------------------
     @staticmethod
     def _links_json(game: Game) -> str:
-        return json.dumps([{"title": d.title, "uris": d.uris,
-                            "file_size": d.file_size,
-                            "upload_date": d.upload_date,
-                            "source": d.source, "extra": d.extra}
-                           for d in game.links])
+        return json.dumps(
+            [
+                {
+                    "title": d.title,
+                    "uris": d.uris,
+                    "file_size": d.file_size,
+                    "upload_date": d.upload_date,
+                    "source": d.source,
+                    "extra": d.extra,
+                }
+                for d in game.links
+            ]
+        )
 
     @staticmethod
     def game_from_row(row: dict) -> Game:
@@ -55,21 +64,30 @@ class Library:
             raw = []
         for d in raw:
             try:
-                links.append(Downloadable(
-                    title=d.get("title", ""), uris=d.get("uris") or [],
-                    file_size=d.get("file_size"),
-                    upload_date=d.get("upload_date", ""),
-                    source=d.get("source", ""), extra=d.get("extra") or {}))
+                links.append(
+                    Downloadable(
+                        title=d.get("title", ""),
+                        uris=d.get("uris") or [],
+                        file_size=d.get("file_size"),
+                        upload_date=d.get("upload_date", ""),
+                        source=d.get("source", ""),
+                        extra=d.get("extra") or {},
+                    )
+                )
             except (TypeError, AttributeError):
                 continue
         return Game(
-            title=row.get("title", ""), platform=row.get("platform", ""),
+            title=row.get("title", ""),
+            platform=row.get("platform", ""),
             year=row.get("year"),
             genres=_loads_list(row.get("genres")),
             summary=row.get("summary") or "",
-            cover_url="", companies=_loads_list(row.get("companies")),
+            cover_url="",
+            companies=_loads_list(row.get("companies")),
             ids=_loads_dict(row.get("ids")),
-            title_id=row.get("title_id") or "", links=links)
+            title_id=row.get("title_id") or "",
+            links=links,
+        )
 
     def upsert_game(self, game: Game, folder: str = "", cover_path: str = "") -> None:
         self._con.execute(
@@ -80,16 +98,27 @@ class Library:
             " ids=excluded.ids, title_id=excluded.title_id,"
             " folder=excluded.folder, updated=excluded.updated,"
             " links=excluded.links",
-            (game.title, game.platform, game.year, json.dumps(game.genres),
-             game.summary, cover_path, json.dumps(game.companies),
-             json.dumps(game.ids), game.title_id, folder, time.time(),
-             self._links_json(game)))
+            (
+                game.title,
+                game.platform,
+                game.year,
+                json.dumps(game.genres),
+                game.summary,
+                cover_path,
+                json.dumps(game.companies),
+                json.dumps(game.ids),
+                game.title_id,
+                folder,
+                time.time(),
+                self._links_json(game),
+            ),
+        )
         self._con.commit()
 
     def list_games(self) -> list[dict]:
         cur = self._con.execute("SELECT * FROM games ORDER BY title")
         cols = [d[0] for d in cur.description]
-        return [dict(zip(cols, row)) for row in cur.fetchall()]
+        return [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
 
     # -- queue ----------------------------------------------------------
     def enqueue(self, item: QueueItem) -> int:
@@ -103,17 +132,24 @@ class Library:
             "bytes_done,total,error) VALUES(?,?,?,?,?,?,?,?) "
             "ON CONFLICT(url) DO UPDATE SET game_title=excluded.game_title,"
             " dest=excluded.dest, status='queued', attempts=0, error=''",
-            (item.game_title, item.url, item.dest, item.status, item.attempts,
-             item.bytes_done, item.total, item.error))
+            (
+                item.game_title,
+                item.url,
+                item.dest,
+                item.status,
+                item.attempts,
+                item.bytes_done,
+                item.total,
+                item.error,
+            ),
+        )
         self._con.commit()
-        row = self._con.execute("SELECT id FROM queue WHERE url=?",
-                                (item.url,)).fetchone()
+        row = self._con.execute("SELECT id FROM queue WHERE url=?", (item.url,)).fetchone()
         return row[0] if row else -1
 
     def update_queue(self, item_id: int, **fields) -> None:
         sets = ", ".join(f"{k}=?" for k in fields)
-        self._con.execute(f"UPDATE queue SET {sets} WHERE id=?",
-                          (*fields.values(), item_id))
+        self._con.execute(f"UPDATE queue SET {sets} WHERE id=?", (*fields.values(), item_id))
         self._con.commit()
 
     def list_queue(self, active_only: bool = False) -> list[dict]:
@@ -123,7 +159,7 @@ class Library:
         q += " ORDER BY id"
         cur = self._con.execute(q)
         cols = [d[0] for d in cur.description]
-        return [dict(zip(cols, row)) for row in cur.fetchall()]
+        return [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
 
     def close(self) -> None:
         self._con.close()
@@ -133,8 +169,7 @@ class Library:
         self._con.commit()
 
     def remove_game(self, title: str, platform: str) -> None:
-        self._con.execute("DELETE FROM games WHERE title=? AND platform=?",
-                          (title, platform))
+        self._con.execute("DELETE FROM games WHERE title=? AND platform=?", (title, platform))
         self._con.commit()
 
 

@@ -4,6 +4,7 @@ Flow: GET /services/csrf-token -> POST /services/account/login/ (cookies kept
 in the session), or S3 keys "Authorization: LOW access:secret".
 PC note: requests handles TLS/certs/redirects — XboxTLS/dns.cpp not needed.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -21,8 +22,9 @@ def new_session() -> requests.Session:
 
 
 def get_csrf_token(s: requests.Session) -> str:
-    r = s.get(f"{BASE}/services/csrf-token",
-              headers={"Content-Type": "application/json"}, timeout=30)
+    r = s.get(
+        f"{BASE}/services/csrf-token", headers={"Content-Type": "application/json"}, timeout=30
+    )
     r.raise_for_status()
     return r.json()["value"]["token"]
 
@@ -32,13 +34,16 @@ def login(s: requests.Session, email: str, password: str) -> bool:
     token = get_csrf_token(s)
     r = s.post(
         f"{BASE}/services/account/login/",
-        headers={"Accept": "application/json",
-                 "Content-Type": "application/json",
-                 "X-CSRF-Token": token, "Origin": BASE,
-                 "Referer": f"{BASE}/login"},
-        json={"username": email, "password": password,
-              "remember": "true", "t": token},
-        timeout=30)
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "X-CSRF-Token": token,
+            "Origin": BASE,
+            "Referer": f"{BASE}/login",
+        },
+        json={"username": email, "password": password, "remember": "true", "t": token},
+        timeout=30,
+    )
     if r.status_code != 200:
         return False
     try:

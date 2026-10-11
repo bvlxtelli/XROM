@@ -1,4 +1,5 @@
 """XROM entry point: `uv run xrom`, `python -m xrom`, or PyInstaller onefile."""
+
 from __future__ import annotations
 
 try:

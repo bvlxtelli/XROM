@@ -4,6 +4,7 @@ v1: documented + implemented, not yet wired to any pipeline (extraction is
 out of v1 scope). Future extractor will call `tool_path("extract-xiso")`.
 SHA256 pins must be filled from official releases at build time.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -37,8 +38,9 @@ def tool_path(name: str, bin_dir: Path) -> Path | None:
 def fetch(name: str, bin_dir: Path) -> Path:
     url = TOOLS[name]["win_url"]
     if not url:
-        raise RuntimeError(f"{name}: no official URL configured; "
-                           "set the tool path manually in Config.")
+        raise RuntimeError(
+            f"{name}: no official URL configured; set the tool path manually in Config."
+        )
     bin_dir.mkdir(parents=True, exist_ok=True)
     dest = bin_dir / TOOLS[name]["exe"]
     r = requests.get(url, headers=UA, timeout=120)

@@ -3,6 +3,7 @@
 v1: ArchiveOrgProvider (user's account) + HydraJsonProvider (user's file).
 Future: TorrentProvider, LocalFolderProvider — one file each, no GUI touch.
 """
+
 from __future__ import annotations
 
 from ..models import Downloadable, Game
